@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Simple To‑Do App</title>
+  <style>
+    :root{--bg:#0f1724;--card:#0b1220;--accent:#06b6d4;--muted:#94a3b8;--text:#e6eef6}
+    *{box-sizing:border-box}
+    body{margin:0;font-family:Inter,system-ui,Segoe UI,Roboto,Arial;background:linear-gradient(180deg,#071126 0%,#081428 100%);color:var(--text);min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
+    .app{width:100%;max-width:720px;background:linear-gradient(180deg,rgba(255,255,255,0.02),rgba(255,255,255,0.01));border-radius:12px;padding:20px;box-shadow:0 8px 30px rgba(2,6,23,.6)}
+    h1{margin:0 0 12px;font-size:20px;letter-spacing:0.6px}
+    .controls{display:flex;gap:8px;margin-bottom:12px}
+    .input{flex:1;display:flex;gap:8px}
+    input[type=text]{flex:1;padding:10px 12px;border-radius:8px;border:1px solid rgba(255,255,255,0.06);background:transparent;color:var(--text);outline:none}
+    button{padding:10px 12px;border-radius:8px;border:0;background:var(--accent);color:#042028;font-weight:600;cursor:pointer}
+    .filters{display:flex;gap:8px;align-items:center}
+    .filters button{background:transparent;color:var(--muted);border:1px solid rgba(255,255,255,0.03);padding:8px 10px;border-radius:8px}
+    .filters button.active{color:var(--text);border-color:rgba(6,182,212,0.18);box-shadow:0 6px 18px rgba(6,182,212,.06)}
+    ul.todos{list-style:none;padding:0;margin:0;max-height:420px;overflow:auto;border-top:1px dashed rgba(255,255,255,0.03)}
+    li.todo{display:flex;align-items:center;gap:10px;padding:12px;border-bottom:1px dashed rgba(255,255,255,0.02)}
+    li.todo .title{flex:1}
+    li.todo.completed .title{text-decoration:line-through;color:var(--muted)}
+    .count{margin-top:12px;color:var(--muted);font-size:14px}
+    .small{font-size:13px;color:var(--muted)}
+    .icon-btn{background:transparent;border:0;color:var(--muted);cursor:pointer;padding:6px;border-radius:6px}
+    .icon-btn:hover{color:var(--text)}
+    @media (max-width:520px){.controls{flex-direction:column}.filters{flex-wrap:wrap}}
+  </style>
+</head>
+<body>
+  <main class="app" role="application" aria-label="Simple to-do app">
+    <header>
+      <h1>To‑Do • Simple & local</h1>
+      <p class="small">Add, edit, complete, and filter tasks. Stored in your browser (localStorage).</p>
+    </header>
+
+    <section class="controls" aria-hidden="false">
+      <form id="addForm" class="input" autocomplete="off">
+        <input id="taskInput" type="text" placeholder="Add a task and press Add or Enter" aria-label="New task" />
+        <button id="addBtn" type="submit">Add</button>
+      </form>
+
+      <div class="filters" role="tablist" aria-label="Filter tasks">
+        <button class="filter-btn active" data-filter="all" role="tab">All</button>
+        <button class="filter-btn" data-filter="active" role="tab">Active</button>
+        <button class="filter-btn" data-filter="completed" role="tab">Completed</button>
+        <button id="clearCompleted" class="icon-btn" title="Clear completed">Clear completed</button>
+      </div>
+    </section>
+
+    <ul id="todos" class="todos" aria-live="polite"></ul>
+
+    <div class="count" id="count">0 tasks</div>
+  </main>
+
+  <script>
+    // Simple To-Do app (single file)
+    const STORAGE_KEY = 'simple_todo_v1';
+    let todos = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+    let filter = 'all';
+
+    const elems = {
+      todos: document.getElementById('todos'),
+      count: document.getElementById('count'),
+      addForm: document.getElementById('addForm'),
+      taskInput: document.getElementById('taskInput'),
+      filterBtns: document.querySelectorAll('.filter-btn'),
+      clearCompleted: document.getElementById('clearCompleted')
+    };
+
+    function save(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(todos)); }
+
+    function render(){
+      elems.todos.innerHTML = '';
+      const visible = todos.filter(t => filter === 'all' ? true : filter === 'active' ? !t.done : t.done);
+
+      visible.forEach(task => {
+        const li = document.createElement('li');
+        li.className = 'todo' + (task.done ? ' completed' : '');
+        li.dataset.id = task.id;
+
+        li.innerHTML = `
+          <input type="checkbox" class="chk" ${task.done ? 'checked' : ''} aria-label="Mark task done" />
+          <div class="title" tabindex="0">${escapeHtml(task.text)}</div>
+          <button class="icon-btn edit" title="Edit">✏️</button>
+          <button class="icon-btn del" title="Delete">🗑️</button>
+        `;
+
+        // checkbox toggle
+        li.querySelector('.chk').addEventListener('change', (e) => {
+          toggleDone(task.id);
+        });
+
+        // edit
+        li.querySelector('.edit').addEventListener('click', () => startEdit(li, task.id));
+
+        // delete
+        li.querySelector('.del').addEventListener('click', () => {
+          todos = todos.filter(t => t.id !== task.id);
+          save(); render();
+        });
+
+        elems.todos.appendChild(li);
+      });
+
+      elems.count.textContent = `${todos.length} task${todos.length !== 1 ? 's' : ''}`;
+      updateFilterUI();
+    }
+
+    function addTask(text){
+      if(!text || !text.trim()) return;
+      const task = { id: Date.now().toString(36) + Math.random().toString(36).slice(2,6), text: text.trim(), done:false };
+      todos.unshift(task);
+      save(); render();
+      elems.taskInput.value = '';
+      elems.taskInput.focus();
+    }
+
+    function toggleDone(id){
+      todos = todos.map(t => t.id === id ? {...t, done: !t.done} : t);
+      save(); render();
+    }
+
+    function startEdit(li, id){
+      const task = todos.find(t => t.id === id);
+      if(!task) return;
+      const titleDiv = li.querySelector('.title');
+      const input = document.createElement('input');
+      input.type = 'text'; input.value = task.text; input.style.width = '100%'; input.autofocus = true;
+      titleDiv.replaceWith(input);
+
+      input.addEventListener('keydown', (e) => {
+        if(e.key === 'Enter') finishEdit();
+        if(e.key === 'Escape') cancelEdit();
+      });
+
+      function finishEdit(){
+        const v = input.value.trim();
+        if(v) {
+          todos = todos.map(t => t.id === id ? {...t, text: v} : t);
+        }
+        save(); render();
+      }
+      function cancelEdit(){ render(); }
+
+      // blur -> save
+      input.addEventListener('blur', finishEdit);
+    }
+
+    function updateFilterUI(){
+      elems.filterBtns.forEach(b => b.classList.toggle('active', b.dataset.filter === filter));
+    }
+
+    // helpers
+    function escapeHtml(s){ return s.replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;'); }
+
+    // events
+    elems.addForm.addEventListener('submit', (e)=>{ e.preventDefault(); addTask(elems.taskInput.value); });
+
+    elems.filterBtns.forEach(b => b.addEventListener('click', ()=>{ filter = b.dataset.filter; render(); }));
+
+    elems.clearCompleted.addEventListener('click', ()=>{
+      todos = todos.filter(t => !t.done);
+      save(); render();
+    });
+
+    // initialize
+    render();
+  </script>
+</body>
+</html>
